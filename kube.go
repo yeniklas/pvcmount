@@ -103,10 +103,8 @@ func PodName(pvcName string) string {
 	return fmt.Sprintf("pvcmount-%x", h[:4])
 }
 
-const bootstrapScript = `mkdir -p /root/.ssh && \
-printf '%s\n' "$AUTHORIZED_KEY" > /root/.ssh/authorized_keys && \
-chmod 700 /root/.ssh && \
-chmod 600 /root/.ssh/authorized_keys && \
+const bootstrapScript = `printf '%s\n' "$AUTHORIZED_KEY" > /tmp/authorized_keys && \
+chmod 600 /tmp/authorized_keys && \
 exec /usr/sbin/sshd -D -e -p 22`
 
 func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdImage string) (string, error) {
@@ -142,6 +140,11 @@ func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdI
 		Spec: corev1.PodSpec{
 			NodeName:      info.NodeName,
 			RestartPolicy: corev1.RestartPolicyNever,
+			SecurityContext: &corev1.PodSecurityContext{
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
 			Containers: []corev1.Container{{
 				Name:    "sshd",
 				Image:   sshdImage,
@@ -152,19 +155,32 @@ func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdI
 					Value: pubKeyLine,
 				}},
 				Ports: []corev1.ContainerPort{{ContainerPort: 22}},
-				VolumeMounts: []corev1.VolumeMount{{
-					Name:      "data",
-					MountPath: "/data",
-				}},
-			}},
-			Volumes: []corev1.Volume{{
-				Name: "data",
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: info.Name,
+				SecurityContext: &corev1.SecurityContext{
+					AllowPrivilegeEscalation: boolPtr(false),
+					Capabilities: &corev1.Capabilities{
+						Drop: []corev1.Capability{"ALL"},
 					},
+					ReadOnlyRootFilesystem: boolPtr(true),
+				},
+				VolumeMounts: []corev1.VolumeMount{
+					{Name: "data", MountPath: "/data"},
+					{Name: "tmp", MountPath: "/tmp"},
 				},
 			}},
+			Volumes: []corev1.Volume{
+				{
+					Name: "data",
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: info.Name,
+						},
+					},
+				},
+				{
+					Name:        "tmp",
+					VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+				},
+			},
 		},
 	}
 
@@ -314,6 +330,7 @@ func (c *Client) podLogs(podName string) (string, error) {
 }
 
 func int64ptr(i int64) *int64 { return &i }
+func boolPtr(b bool) *bool   { return &b }
 
 func (c *Client) DeletePod(ctx context.Context, podName string) error {
 	grace := int64(0)
