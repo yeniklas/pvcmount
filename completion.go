@@ -11,26 +11,29 @@ import (
 const zshCompletion = `#compdef pvcmount
 
 _pvcmount() {
-  # Pick up --namespace value from already-typed words so PVC list is namespace-aware.
-  local namespace=""
+  # Pick up --namespace/-n and --kubeconfig from already-typed words so lists are context-aware.
+  local namespace="" kubeconfig=""
   local i
   for (( i = 2; i <= ${#words}; i++ )); do
-    if [[ "${words[i]}" == (--namespace|-namespace) ]]; then
+    if [[ "${words[i]}" == (-n|--namespace) ]]; then
       namespace="${words[i+1]}"
-      break
+    elif [[ "${words[i]}" == --kubeconfig ]]; then
+      kubeconfig="${words[i+1]}"
     fi
   done
 
-  local -a ns_arg
+  local -a ns_arg kc_arg
   [[ -n "$namespace" ]] && ns_arg=(--namespace "$namespace")
+  [[ -n "$kubeconfig" ]] && kc_arg=(--kubeconfig "$kubeconfig")
 
   _arguments \
-    '--namespace[Kubernetes namespace (default: current context)]:namespace:' \
+    '(-n --namespace)'{-n,--namespace}'[Kubernetes namespace (default: current context)]:namespace:($(pvcmount __list-namespaces "${kc_arg[@]}" 2>/dev/null))' \
+    '--kubeconfig[path to kubeconfig file]:file:_files' \
     '--mountpoint[local mount directory (default: ~/pvcmount/<pvc>-<random>)]:directory:_directories' \
     '--sshd-image[container image for the temporary sshd pod]:image:' \
     '--version[print version and exit]' \
     '--self-update[update pvcmount to the latest release]' \
-    ':PVC name:($(pvcmount __list-pvcs "${ns_arg[@]}" 2>/dev/null))'
+    ':PVC name:($(pvcmount __list-pvcs "${ns_arg[@]}" "${kc_arg[@]}" 2>/dev/null))'
 }
 
 _pvcmount "$@"
@@ -49,14 +52,15 @@ func runCompletion(shell string) {
 // runListPVCs is the backend for zsh completion — called as `pvcmount __list-pvcs [--namespace <ns>]`.
 // All errors are swallowed so completion stays silent on failures.
 func runListPVCs(args []string) {
-	var ns string
+	var ns, kc string
 	for i := 0; i+1 < len(args); i++ {
-		if args[i] == "--namespace" || args[i] == "-namespace" {
+		if args[i] == "--namespace" || args[i] == "-n" {
 			ns = args[i+1]
-			break
+		} else if args[i] == "--kubeconfig" {
+			kc = args[i+1]
 		}
 	}
-	client, err := NewClient(ns)
+	client, err := NewClient(ns, kc)
 	if err != nil {
 		return
 	}
@@ -68,5 +72,26 @@ func runListPVCs(args []string) {
 	}
 	for _, pvc := range pvcs.Items {
 		fmt.Println(pvc.Name)
+	}
+}
+
+// runListNamespaces is the backend for zsh namespace completion.
+func runListNamespaces(args []string) {
+	var kc string
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--kubeconfig" {
+			kc = args[i+1]
+		}
+	}
+	client, err := NewClient("", kc)
+	if err != nil {
+		return
+	}
+	nsList, err := client.cs.CoreV1().Namespaces().List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return
+	}
+	for _, ns := range nsList.Items {
+		fmt.Println(ns.Name)
 	}
 }

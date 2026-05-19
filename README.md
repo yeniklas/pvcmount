@@ -60,7 +60,7 @@ pvcmount --self-update
 pvcmount my-pvc
 
 # Specify a namespace
-pvcmount --namespace staging my-pvc
+pvcmount -n staging my-pvc
 
 # Use a specific local directory instead of the auto-generated one
 pvcmount --mountpoint /mnt/data my-pvc
@@ -74,7 +74,8 @@ The auto-generated mountpoint (`~/pvcmount/<pvc-name>-<random>/`) is removed whe
 
 | Flag | Default | Description |
 |---|---|---|
-| `--namespace` | current context | Kubernetes namespace |
+| `-n`, `--namespace` | current context | Kubernetes namespace |
+| `--kubeconfig` | `~/.kube/config` or `$KUBECONFIG` | Path to kubeconfig file |
 | `--mountpoint` | `~/pvcmount/<pvc>-<random>` | Local directory to mount into |
 | `--sshd-image` | `ghcr.io/yeniklas/pvcmount-sshd:latest` | Container image for the temporary pod |
 | `--debug` | false | Show verbose output for troubleshooting |

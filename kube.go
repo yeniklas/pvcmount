@@ -25,8 +25,11 @@ type Client struct {
 	namespace string
 }
 
-func NewClient(namespace string) (*Client, error) {
+func NewClient(namespace, kubeconfig string) (*Client, error) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kubeconfig != "" {
+		loadingRules.ExplicitPath = kubeconfig
+	}
 	clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{})
 
 	restCfg, err := clientConfig.ClientConfig()

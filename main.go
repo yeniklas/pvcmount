@@ -31,15 +31,21 @@ func main() {
 		case "__list-pvcs":
 			runListPVCs(os.Args[2:])
 			os.Exit(0)
+		case "__list-namespaces":
+			runListNamespaces(os.Args[2:])
+			os.Exit(0)
 		}
 	}
 
 	var namespace string
+	var kubeconfig string
 	var mountpointFlag string
 	var sshdImage string
 	var versionFlag bool
 	var updateFlag bool
 	flag.StringVar(&namespace, "namespace", "", "Kubernetes namespace (defaults to current context namespace)")
+	flag.StringVar(&namespace, "n", "", "Kubernetes namespace (short for --namespace)")
+	flag.StringVar(&kubeconfig, "kubeconfig", "", "path to kubeconfig file (default: ~/.kube/config or $KUBECONFIG)")
 	flag.StringVar(&mountpointFlag, "mountpoint", "", "local directory to mount into (default: ~/pvcmount/<pvc-name>-<random>)")
 	flag.StringVar(&sshdImage, "sshd-image", "ghcr.io/yeniklas/pvcmount-sshd:latest", "container image for the temporary sshd pod")
 	flag.BoolVar(&versionFlag, "version", false, "print version and exit")
@@ -97,7 +103,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	if err := run(ctx, pvcName, namespace, mountpoint, autoCreated, sshdImage); err != nil && err != context.Canceled {
+	if err := run(ctx, pvcName, namespace, kubeconfig, mountpoint, autoCreated, sshdImage); err != nil && err != context.Canceled {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -133,12 +139,12 @@ func resolveMountpoint(pvcName, override string) (path string, autoCreated bool,
 	return dir, true, nil
 }
 
-func run(ctx context.Context, pvcName, namespace, mountpoint string, autoCreated bool, sshdImage string) error {
+func run(ctx context.Context, pvcName, namespace, kubeconfig, mountpoint string, autoCreated bool, sshdImage string) error {
 	if autoCreated {
 		defer os.Remove(mountpoint)
 	}
 
-	client, err := NewClient(namespace)
+	client, err := NewClient(namespace, kubeconfig)
 	if err != nil {
 		return fmt.Errorf("kubernetes client: %w", err)
 	}
