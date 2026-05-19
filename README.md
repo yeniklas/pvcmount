@@ -78,6 +78,7 @@ The auto-generated mountpoint (`~/pvcmount/<pvc-name>-<random>/`) is removed whe
 | `--mountpoint` | `~/pvcmount/<pvc>-<random>` | Local directory to mount into |
 | `--sshd-image` | `ghcr.io/yeniklas/pvcmount-sshd:latest` | Container image for the temporary pod |
 | `--debug` | false | Show verbose output for troubleshooting |
+| `--allow-root` | false | Allow running as root (not recommended) |
 | `--version` | | Print version and exit |
 | `--self-update` | | Update to the latest release |
 
@@ -91,6 +92,7 @@ Completion covers flags and live PVC names from the cluster (namespace-aware via
 
 ## Security
 
+- pvcmount refuses to run as root. FUSE filesystems mounted by root are only accessible to root, and elevated privileges are not needed. Use `--allow-root` to override if you have a specific reason.
 - The SSH keypair is freshly generated per invocation and passed to the pod as an environment variable — no Kubernetes Secrets or ConfigMaps are created.
 - The temporary pod runs as root (required for unrestricted access to files on the PVC regardless of ownership). It uses `allowPrivilegeEscalation: false` and `seccompProfile: RuntimeDefault`.
 - Clusters with a `restricted` PodSecurity policy will log one warning (`runAsNonRoot != true`) which is non-fatal. If your cluster enforces `restricted` strictly, the pod will be blocked.

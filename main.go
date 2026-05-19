@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -44,6 +45,8 @@ func main() {
 	flag.BoolVar(&versionFlag, "version", false, "print version and exit")
 	flag.BoolVar(&updateFlag, "self-update", false, "update pvcmount to the latest release")
 	flag.BoolVar(&debug, "debug", false, "show verbose output for troubleshooting")
+	var allowRoot bool
+	flag.BoolVar(&allowRoot, "allow-root", false, "allow running as root (not recommended)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: pvcmount [--namespace <ns>] [--mountpoint <path>] <pvc-name>\n")
 		fmt.Fprintf(os.Stderr, "       pvcmount completion zsh\n\n")
@@ -70,6 +73,16 @@ func main() {
 
 	if flag.NArg() != 1 {
 		flag.Usage()
+		os.Exit(1)
+	}
+
+	if os.Getuid() == 0 && !allowRoot {
+		fmt.Fprintln(os.Stderr, "error: pvcmount should not be run as root\n\nFUSE filesystems mounted by root are only accessible to root, and\npvcmount does not require elevated privileges.\n\nTo bypass this check: pvcmount --allow-root <pvc-name>")
+		os.Exit(1)
+	}
+
+	if _, err := exec.LookPath("sshfs"); err != nil {
+		fmt.Fprintln(os.Stderr, "error: sshfs not found in PATH\n\nInstall it with:\n  apt install sshfs          # Debian/Ubuntu\n  dnf install fuse-sshfs    # Fedora/RHEL")
 		os.Exit(1)
 	}
 
