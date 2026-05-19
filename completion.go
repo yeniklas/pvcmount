@@ -11,7 +11,11 @@ import (
 const zshCompletion = `#compdef pvcmount
 
 _pvcmount() {
-  # Pick up --namespace/-n and --kubeconfig from already-typed words so lists are context-aware.
+  local state context line
+  typeset -A opt_args
+
+  # Scan already-typed words for --namespace/-n and --kubeconfig so backends
+  # can be called with the right context while completing other arguments.
   local namespace="" kubeconfig=""
   local i
   for (( i = 2; i <= ${#words}; i++ )); do
@@ -26,14 +30,27 @@ _pvcmount() {
   [[ -n "$namespace" ]] && ns_arg=(--namespace "$namespace")
   [[ -n "$kubeconfig" ]] && kc_arg=(--kubeconfig "$kubeconfig")
 
-  _arguments \
-    '(-n --namespace)'{-n,--namespace}'[Kubernetes namespace (default: current context)]:namespace:($(pvcmount __list-namespaces "${kc_arg[@]}" 2>/dev/null))' \
+  _arguments -C \
+    '(-n --namespace)'{-n,--namespace}'[Kubernetes namespace (default: current context)]:namespace:->namespace' \
     '--kubeconfig[path to kubeconfig file]:file:_files' \
     '--mountpoint[local mount directory (default: ~/pvcmount/<pvc>-<random>)]:directory:_directories' \
     '--sshd-image[container image for the temporary sshd pod]:image:' \
     '--version[print version and exit]' \
     '--self-update[update pvcmount to the latest release]' \
-    ':PVC name:($(pvcmount __list-pvcs "${ns_arg[@]}" "${kc_arg[@]}" 2>/dev/null))'
+    ':PVC name:->pvcs'
+
+  case $state in
+    namespace)
+      local -a nss
+      nss=(${(f)"$(pvcmount __list-namespaces "${kc_arg[@]}" 2>/dev/null)"})
+      compadd -a nss
+      ;;
+    pvcs)
+      local -a pvcs
+      pvcs=(${(f)"$(pvcmount __list-pvcs "${ns_arg[@]}" "${kc_arg[@]}" 2>/dev/null)"})
+      compadd -a pvcs
+      ;;
+  esac
 }
 
 _pvcmount "$@"
