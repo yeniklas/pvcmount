@@ -103,15 +103,13 @@ func PodName(pvcName string) string {
 	return fmt.Sprintf("pvcmount-%x", h[:4])
 }
 
-const bootstrapScript = `apk add --no-cache openssh-server && \
-ssh-keygen -A && \
-mkdir -p /root/.ssh && \
+const bootstrapScript = `mkdir -p /root/.ssh && \
 printf '%s\n' "$AUTHORIZED_KEY" > /root/.ssh/authorized_keys && \
 chmod 700 /root/.ssh && \
 chmod 600 /root/.ssh/authorized_keys && \
 exec /usr/sbin/sshd -D -e -p 22`
 
-func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine string) (string, error) {
+func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdImage string) (string, error) {
 	podName := PodName(info.Name)
 
 	existing, err := c.cs.CoreV1().Pods(c.namespace).Get(ctx, podName, metav1.GetOptions{})
@@ -146,7 +144,7 @@ func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine string
 			RestartPolicy: corev1.RestartPolicyNever,
 			Containers: []corev1.Container{{
 				Name:    "sshd",
-				Image:   "alpine:3.20",
+				Image:   sshdImage,
 				Command: []string{"/bin/sh", "-c"},
 				Args:    []string{bootstrapScript},
 				Env: []corev1.EnvVar{{
@@ -256,12 +254,13 @@ func (c *Client) StartPortForward(ctx context.Context, podName string) (uint16, 
 	localPort := ports[0].Local
 	fmt.Printf("port-forwarding localhost:%d → pod/%s:22\n", localPort, podName)
 
-	// Wait until sshd is actually accepting connections (apk install + sshd startup lag).
+	// Wait until sshd is actually accepting connections.
 	// A plain TCP dial succeeds immediately because the port-forward proxy accepts the
 	// connection before forwarding it. We must read the SSH banner to confirm sshd is up.
 	fmt.Print("waiting for sshd to accept connections")
-	deadline := time.Now().Add(120 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	addr := fmt.Sprintf("127.0.0.1:%d", localPort)
+	ready := false
 	for time.Now().Before(deadline) {
 		if ctx.Err() != nil {
 			close(stopChan)
@@ -269,10 +268,20 @@ func (c *Client) StartPortForward(ctx context.Context, podName string) (uint16, 
 		}
 		if sshdReady(addr) {
 			fmt.Println(" ready")
+			ready = true
 			break
 		}
 		fmt.Print(".")
 		time.Sleep(2 * time.Second)
+	}
+	if !ready {
+		fmt.Println()
+		logs, _ := c.podLogs(podName)
+		if logs != "" {
+			fmt.Printf("pod logs:\n%s\n", logs)
+		}
+		close(stopChan)
+		return 0, nil, fmt.Errorf("timed out waiting for sshd in pod %s", podName)
 	}
 
 	stop := func() { close(stopChan) }
@@ -292,6 +301,19 @@ func sshdReady(addr string) bool {
 	n, err := conn.Read(buf)
 	return err == nil && n > 0
 }
+
+func (c *Client) podLogs(podName string) (string, error) {
+	req := c.cs.CoreV1().Pods(c.namespace).GetLogs(podName, &corev1.PodLogOptions{TailLines: int64ptr(20)})
+	rc, err := req.Stream(context.Background())
+	if err != nil {
+		return "", err
+	}
+	defer rc.Close()
+	b, err := io.ReadAll(rc)
+	return string(b), err
+}
+
+func int64ptr(i int64) *int64 { return &i }
 
 func (c *Client) DeletePod(ctx context.Context, podName string) error {
 	grace := int64(0)

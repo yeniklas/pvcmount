@@ -16,10 +16,12 @@ var version = "dev"
 func main() {
 	var namespace string
 	var mountpointFlag string
+	var sshdImage string
 	var versionFlag bool
 	var updateFlag bool
 	flag.StringVar(&namespace, "namespace", "", "Kubernetes namespace (defaults to current context namespace)")
 	flag.StringVar(&mountpointFlag, "mountpoint", "", "local directory to mount into (default: ~/pvcmount/<pvc-name>-<random>)")
+	flag.StringVar(&sshdImage, "sshd-image", "ghcr.io/yeniklas/pvcmount-sshd:latest", "container image for the temporary sshd pod")
 	flag.BoolVar(&versionFlag, "version", false, "print version and exit")
 	flag.BoolVar(&updateFlag, "self-update", false, "update pvcmount to the latest release")
 	flag.Usage = func() {
@@ -57,7 +59,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	if err := run(ctx, pvcName, namespace, mountpoint, autoCreated); err != nil && err != context.Canceled {
+	if err := run(ctx, pvcName, namespace, mountpoint, autoCreated, sshdImage); err != nil && err != context.Canceled {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -93,7 +95,7 @@ func resolveMountpoint(pvcName, override string) (path string, autoCreated bool,
 	return dir, true, nil
 }
 
-func run(ctx context.Context, pvcName, namespace, mountpoint string, autoCreated bool) error {
+func run(ctx context.Context, pvcName, namespace, mountpoint string, autoCreated bool, sshdImage string) error {
 	if autoCreated {
 		defer os.Remove(mountpoint)
 	}
@@ -116,7 +118,7 @@ func run(ctx context.Context, pvcName, namespace, mountpoint string, autoCreated
 		return fmt.Errorf("generate ssh key: %w", err)
 	}
 
-	podName, err := client.EnsurePod(ctx, pvcInfo, kp.AuthorizedLine)
+	podName, err := client.EnsurePod(ctx, pvcInfo, kp.AuthorizedLine, sshdImage)
 	if err != nil {
 		return err
 	}
