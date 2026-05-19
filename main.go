@@ -5,19 +5,19 @@ import (
 	"crypto/rand"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 
+	"github.com/go-logr/logr"
 	klog "k8s.io/klog/v2"
 )
 
 var version = "dev"
 
 func main() {
-	klog.SetOutput(io.Discard)
+	klog.SetLogger(logr.Discard())
 
 	// Handle subcommands before flag parsing so `flag` doesn't choke on unknown args.
 	if len(os.Args) >= 2 {
