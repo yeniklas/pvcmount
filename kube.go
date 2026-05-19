@@ -105,7 +105,10 @@ func PodName(pvcName string) string {
 
 const bootstrapScript = `printf '%s\n' "$AUTHORIZED_KEY" > /tmp/authorized_keys && \
 chmod 600 /tmp/authorized_keys && \
-exec /usr/sbin/sshd -D -e -p 22`
+exec /usr/sbin/sshd -D -e -p 22 \
+  -o AuthorizedKeysFile=/tmp/authorized_keys \
+  -o PermitRootLogin=yes \
+  -o UsePAM=no`
 
 func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdImage string) (string, error) {
 	podName := PodName(info.Name)
@@ -160,7 +163,6 @@ func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdI
 					Capabilities: &corev1.Capabilities{
 						Drop: []corev1.Capability{"ALL"},
 					},
-					ReadOnlyRootFilesystem: boolPtr(true),
 				},
 				VolumeMounts: []corev1.VolumeMount{
 					{Name: "data", MountPath: "/data"},
