@@ -10,14 +10,33 @@ import (
 	"syscall"
 )
 
+var version = "dev"
+
 func main() {
 	var namespace string
+	var versionFlag bool
+	var updateFlag bool
 	flag.StringVar(&namespace, "namespace", "", "Kubernetes namespace (defaults to current context namespace)")
+	flag.BoolVar(&versionFlag, "version", false, "print version and exit")
+	flag.BoolVar(&updateFlag, "self-update", false, "update pvcmount to the latest release")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: pvcmount [--namespace <ns>] <pvc-name> <mountpoint>\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+
+	if versionFlag {
+		fmt.Println(version)
+		os.Exit(0)
+	}
+
+	if updateFlag {
+		if err := runSelfUpdate(version); err != nil {
+			fmt.Fprintln(os.Stderr, "update:", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 
 	if flag.NArg() != 2 {
 		flag.Usage()
