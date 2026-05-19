@@ -5,3 +5,6 @@ build:
 
 install:
 	go install -ldflags "-X main.version=$(VERSION)" .
+
+test-e2e:
+	go test -tags e2e -v -run TestE2E -timeout 5m ./...
