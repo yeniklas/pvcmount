@@ -103,10 +103,11 @@ func PodName(pvcName string) string {
 	return fmt.Sprintf("pvcmount-%x", h[:4])
 }
 
-const bootstrapScript = `printf '%s\n' "$AUTHORIZED_KEY" > /tmp/authorized_keys && \
-chmod 600 /tmp/authorized_keys && \
+const bootstrapScript = `mkdir -p /root/.ssh && \
+chmod 700 /root/.ssh && \
+printf '%s\n' "$AUTHORIZED_KEY" > /root/.ssh/authorized_keys && \
+chmod 600 /root/.ssh/authorized_keys && \
 exec /usr/sbin/sshd -D -e -p 22 \
-  -o AuthorizedKeysFile=/tmp/authorized_keys \
   -o PermitRootLogin=yes \
   -o UsePAM=no`
 
@@ -163,7 +164,6 @@ func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdI
 				},
 				VolumeMounts: []corev1.VolumeMount{
 					{Name: "data", MountPath: "/data"},
-					{Name: "tmp", MountPath: "/tmp"},
 				},
 			}},
 			Volumes: []corev1.Volume{
@@ -174,10 +174,6 @@ func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdI
 							ClaimName: info.Name,
 						},
 					},
-				},
-				{
-					Name:        "tmp",
-					VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 				},
 			},
 		},
