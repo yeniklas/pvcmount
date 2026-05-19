@@ -337,6 +337,31 @@ func (c *Client) podLogs(podName string) (string, error) {
 func int64ptr(i int64) *int64 { return &i }
 func boolPtr(b bool) *bool   { return &b }
 
+// kubeConfigNamespaces extracts namespace names from kubeconfig contexts.
+// Used as a fallback when RBAC prevents listing namespaces from the cluster API.
+func kubeConfigNamespaces(kc string) []string {
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kc != "" {
+		rules.ExplicitPath = kc
+	}
+	cfg, err := rules.Load()
+	if err != nil {
+		return []string{"default"}
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, ctx := range cfg.Contexts {
+		if ctx.Namespace != "" && !seen[ctx.Namespace] {
+			seen[ctx.Namespace] = true
+			out = append(out, ctx.Namespace)
+		}
+	}
+	if !seen["default"] {
+		out = append(out, "default")
+	}
+	return out
+}
+
 func (c *Client) DeletePod(ctx context.Context, podName string) error {
 	grace := int64(0)
 	prop := metav1.DeletePropagationBackground

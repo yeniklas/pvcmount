@@ -76,6 +76,8 @@ func runListPVCs(args []string) {
 }
 
 // runListNamespaces is the backend for zsh namespace completion.
+// It tries the cluster API first; if RBAC or connectivity prevents that it falls
+// back to namespace names found in kubeconfig contexts.
 func runListNamespaces(args []string) {
 	var kc string
 	for i := 0; i+1 < len(args); i++ {
@@ -84,14 +86,16 @@ func runListNamespaces(args []string) {
 		}
 	}
 	client, err := NewClient("", kc)
-	if err != nil {
-		return
+	if err == nil {
+		nsList, err := client.cs.CoreV1().Namespaces().List(context.Background(), metav1.ListOptions{})
+		if err == nil {
+			for _, ns := range nsList.Items {
+				fmt.Println(ns.Name)
+			}
+			return
+		}
 	}
-	nsList, err := client.cs.CoreV1().Namespaces().List(context.Background(), metav1.ListOptions{})
-	if err != nil {
-		return
-	}
-	for _, ns := range nsList.Items {
-		fmt.Println(ns.Name)
+	for _, ns := range kubeConfigNamespaces(kc) {
+		fmt.Println(ns)
 	}
 }
