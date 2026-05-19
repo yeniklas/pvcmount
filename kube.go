@@ -7,8 +7,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
+	authv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
@@ -116,33 +119,11 @@ exec /usr/sbin/sshd -D -e -p 22 \
   -o PermitRootLogin=yes \
   -o UsePAM=no`
 
-func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdImage string) (string, error) {
-	podName := PodName(info.Name)
-
-	existing, err := c.cs.CoreV1().Pods(c.namespace).Get(ctx, podName, metav1.GetOptions{})
-	if err == nil {
-		if err := c.DeletePod(ctx, podName); err != nil {
-			return "", fmt.Errorf("delete stale pod: %w", err)
-		}
-		// wait for deletion
-		watcher, err := c.cs.CoreV1().Pods(c.namespace).Watch(ctx, metav1.ListOptions{
-			FieldSelector:   "metadata.name=" + podName,
-			ResourceVersion: existing.ResourceVersion,
-		})
-		if err == nil {
-			for ev := range watcher.ResultChan() {
-				if ev.Type == watch.Deleted {
-					watcher.Stop()
-					break
-				}
-			}
-		}
-	}
-
-	pod := &corev1.Pod{
+func buildPod(info *PVCInfo, pubKeyLine, sshdImage, namespace string) *corev1.Pod {
+	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      podName,
-			Namespace: c.namespace,
+			Name:      PodName(info.Name),
+			Namespace: namespace,
 			Labels:    map[string]string{"app": "pvcmount", "pvc": info.Name},
 		},
 		Spec: corev1.PodSpec{
@@ -182,13 +163,116 @@ func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdI
 			},
 		},
 	}
+}
 
+func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdImage string) (string, error) {
+	podName := PodName(info.Name)
+
+	existing, err := c.cs.CoreV1().Pods(c.namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err == nil {
+		if err := c.DeletePod(ctx, podName); err != nil {
+			return "", fmt.Errorf("delete stale pod: %w", err)
+		}
+		watcher, err := c.cs.CoreV1().Pods(c.namespace).Watch(ctx, metav1.ListOptions{
+			FieldSelector:   "metadata.name=" + podName,
+			ResourceVersion: existing.ResourceVersion,
+		})
+		if err == nil {
+			for ev := range watcher.ResultChan() {
+				if ev.Type == watch.Deleted {
+					watcher.Stop()
+					break
+				}
+			}
+		}
+	}
+
+	pod := buildPod(info, pubKeyLine, sshdImage, c.namespace)
 	if _, err := c.cs.CoreV1().Pods(c.namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
 		return "", fmt.Errorf("create pod: %w", err)
 	}
 
 	debugf("pod %s", podName)
 	return podName, nil
+}
+
+// PreflightCheck validates that pvcmount has the permissions it needs and that
+// the pod spec would be accepted by admission controllers before touching the cluster.
+func (c *Client) PreflightCheck(ctx context.Context, pvcInfo *PVCInfo, sshdImage string) error {
+	type perm struct{ verb, resource, subresource string }
+	perms := []perm{
+		{"get", "persistentvolumeclaims", ""},
+		{"list", "pods", ""},
+		{"watch", "pods", ""},
+		{"create", "pods", ""},
+		{"delete", "pods", ""},
+		{"get", "pods", "log"},
+		{"create", "pods", "portforward"},
+	}
+
+	var mu sync.Mutex
+	var denied []string
+	var wg sync.WaitGroup
+	for _, p := range perms {
+		wg.Add(1)
+		go func(p perm) {
+			defer wg.Done()
+			if err := c.canI(ctx, p.verb, p.resource, p.subresource); err != nil {
+				mu.Lock()
+				denied = append(denied, "  - "+err.Error())
+				mu.Unlock()
+			}
+		}(p)
+	}
+	wg.Wait()
+
+	if len(denied) > 0 {
+		return fmt.Errorf("missing permissions in namespace %q:\n%s",
+			c.namespace, strings.Join(denied, "\n"))
+	}
+
+	// Dry-run the pod spec through all admission controllers (PodSecurity, webhooks,
+	// ResourceQuota, etc.) without persisting anything.
+	// Use GenerateName so a stale pod with the same name does not cause a false conflict.
+	pod := buildPod(pvcInfo, "preflight", sshdImage, c.namespace)
+	pod.Name = ""
+	pod.GenerateName = "pvcmount-preflight-"
+	if _, err := c.cs.CoreV1().Pods(c.namespace).Create(ctx, pod, metav1.CreateOptions{
+		DryRun: []string{metav1.DryRunAll},
+	}); err != nil {
+		return fmt.Errorf("pod spec rejected by cluster:\n  %s", err)
+	}
+
+	return nil
+}
+
+func (c *Client) canI(ctx context.Context, verb, resource, subresource string) error {
+	sar := &authv1.SelfSubjectAccessReview{
+		Spec: authv1.SelfSubjectAccessReviewSpec{
+			ResourceAttributes: &authv1.ResourceAttributes{
+				Namespace:   c.namespace,
+				Verb:        verb,
+				Resource:    resource,
+				Subresource: subresource,
+			},
+		},
+	}
+	result, err := c.cs.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, sar, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("cannot check %s %s: %w", verb, resource, err)
+	}
+	if !result.Status.Allowed {
+		target := resource
+		if subresource != "" {
+			target += "/" + subresource
+		}
+		reason := result.Status.Reason
+		if reason == "" {
+			reason = "not allowed"
+		}
+		return fmt.Errorf("cannot %s %s: %s", verb, target, reason)
+	}
+	return nil
 }
 
 func (c *Client) WaitPodReady(ctx context.Context, podName string) error {

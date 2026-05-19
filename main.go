@@ -159,6 +159,10 @@ func run(ctx context.Context, pvcName, namespace, kubeconfig, mountpoint string,
 		debugf("RWO — pinned to node %s", pvcInfo.NodeName)
 	}
 
+	if err := client.PreflightCheck(ctx, pvcInfo, sshdImage); err != nil {
+		return err
+	}
+
 	kp, err := GenerateKeyPair()
 	if err != nil {
 		return fmt.Errorf("generate ssh key: %w", err)
