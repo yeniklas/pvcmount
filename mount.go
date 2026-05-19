@@ -18,10 +18,12 @@ func SSHFS(mountpoint string, localPort uint16, keyFile string) (*exec.Cmd, erro
 		"-o", "IdentityFile=" + keyFile,
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile=/dev/null",
-		"-o", "LogLevel=ERROR",
 		"-o", "auto_unmount",
-		"-f",
 	}
+	if !debug {
+		args = append(args, "-o", "LogLevel=ERROR")
+	}
+	args = append(args, "-f")
 
 	cmd := exec.Command("sshfs", args...)
 	cmd.Stdout = os.Stdout

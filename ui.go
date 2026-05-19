@@ -5,6 +5,8 @@ import (
 	"os"
 )
 
+var debug bool
+
 var isTTY = func() bool {
 	if os.Getenv("NO_COLOR") != "" {
 		return false
@@ -43,4 +45,10 @@ func styleGreen(s string) string {
 
 func stepDone(label string) {
 	fmt.Printf("  %s %s\n", styleGreen("✓"), label)
+}
+
+func debugf(format string, args ...any) {
+	if debug {
+		fmt.Printf("  "+styleDim(fmt.Sprintf(format, args...))+"\n")
+	}
 }

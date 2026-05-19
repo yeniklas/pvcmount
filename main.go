@@ -17,8 +17,6 @@ import (
 var version = "dev"
 
 func main() {
-	klog.SetLogger(logr.Discard())
-
 	// Handle subcommands before flag parsing so `flag` doesn't choke on unknown args.
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
@@ -45,12 +43,17 @@ func main() {
 	flag.StringVar(&sshdImage, "sshd-image", "ghcr.io/yeniklas/pvcmount-sshd:latest", "container image for the temporary sshd pod")
 	flag.BoolVar(&versionFlag, "version", false, "print version and exit")
 	flag.BoolVar(&updateFlag, "self-update", false, "update pvcmount to the latest release")
+	flag.BoolVar(&debug, "debug", false, "show verbose output for troubleshooting")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: pvcmount [--namespace <ns>] [--mountpoint <path>] <pvc-name>\n")
 		fmt.Fprintf(os.Stderr, "       pvcmount completion zsh\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+
+	if !debug {
+		klog.SetLogger(logr.Discard())
+	}
 
 	if versionFlag {
 		fmt.Println(version)
@@ -132,6 +135,9 @@ func run(ctx context.Context, pvcName, namespace, mountpoint string, autoCreated
 	pvcInfo, err := client.InspectPVC(ctx, pvcName)
 	if err != nil {
 		return err
+	}
+	if pvcInfo.NodeName != "" {
+		debugf("RWO — pinned to node %s", pvcInfo.NodeName)
 	}
 
 	kp, err := GenerateKeyPair()

@@ -184,6 +184,7 @@ func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdI
 		return "", fmt.Errorf("create pod: %w", err)
 	}
 
+	debugf("pod %s", podName)
 	return podName, nil
 }
 
@@ -261,22 +262,35 @@ func (c *Client) StartPortForward(ctx context.Context, podName string) (uint16, 
 	}
 
 	localPort := ports[0].Local
+	debugf("port-forward localhost:%d → pod/%s:22", localPort, podName)
 
 	// Wait until sshd is actually accepting connections.
 	// A plain TCP dial succeeds immediately because the port-forward proxy accepts the
 	// connection before forwarding it. We must read the SSH banner to confirm sshd is up.
 	deadline := time.Now().Add(60 * time.Second)
 	addr := fmt.Sprintf("127.0.0.1:%d", localPort)
+	if debug {
+		fmt.Print(styleDim("  waiting for sshd"))
+	}
 	ready := false
 	for time.Now().Before(deadline) {
 		if ctx.Err() != nil {
+			if debug {
+				fmt.Println()
+			}
 			close(stopChan)
 			return 0, nil, ctx.Err()
 		}
 		if sshdReady(addr) {
+			if debug {
+				fmt.Println()
+			}
 			stepDone("sshd ready")
 			ready = true
 			break
+		}
+		if debug {
+			fmt.Print(styleDim("."))
 		}
 		time.Sleep(2 * time.Second)
 	}
