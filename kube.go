@@ -217,7 +217,6 @@ func (c *Client) WaitPodReady(ctx context.Context, podName string) error {
 			}
 		}
 	}
-	return fmt.Errorf("timed out waiting for pod to be ready")
 }
 
 func (c *Client) StartPortForward(ctx context.Context, podName string) (uint16, func(), error) {

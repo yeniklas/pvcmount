@@ -49,6 +49,6 @@ func stepDone(label string) {
 
 func debugf(format string, args ...any) {
 	if debug {
-		fmt.Printf("  "+styleDim(fmt.Sprintf(format, args...))+"\n")
+		fmt.Println("  " + styleDim(fmt.Sprintf(format, args...)))
 	}
 }
