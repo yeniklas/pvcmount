@@ -89,7 +89,7 @@ The auto-generated mountpoint (`~/pvcmount/<pvc-name>-<random>/`) is removed whe
 pvcmount completion zsh > "${fpath[1]}/_pvcmount"
 ```
 
-Completion covers flags and live PVC names from the cluster (namespace-aware via `--namespace`).
+Completion covers flags, live PVC names, and live namespace names from the cluster.
 
 ## Security
 
@@ -112,3 +112,19 @@ If your shell freezes after a failed mount, a stale FUSE mount may have been lef
 ```sh
 fusermount3 -u ~/pvcmount/<name>
 ```
+
+## Development
+
+Unit tests (no cluster required):
+
+```sh
+go test ./...
+```
+
+End-to-end tests against a real cluster:
+
+```sh
+make test-e2e
+```
+
+The e2e test creates a `pvcmount-e2e` namespace and a `pvcmount-e2e-data` PVC (1 Gi, default storage class) on the first run and leaves them in place so subsequent runs skip provisioning. It exercises the full pipeline: pod creation, port-forwarding, SSH auth, SSHFS mount, and R/W file access.
