@@ -14,6 +14,22 @@ import (
 var version = "dev"
 
 func main() {
+	// Handle subcommands before flag parsing so `flag` doesn't choke on unknown args.
+	if len(os.Args) >= 2 {
+		switch os.Args[1] {
+		case "completion":
+			shell := "zsh"
+			if len(os.Args) >= 3 {
+				shell = os.Args[2]
+			}
+			runCompletion(shell)
+			os.Exit(0)
+		case "__list-pvcs":
+			runListPVCs(os.Args[2:])
+			os.Exit(0)
+		}
+	}
+
 	var namespace string
 	var mountpointFlag string
 	var sshdImage string
@@ -26,6 +42,7 @@ func main() {
 	flag.BoolVar(&updateFlag, "self-update", false, "update pvcmount to the latest release")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: pvcmount [--namespace <ns>] [--mountpoint <path>] <pvc-name>\n")
+		fmt.Fprintf(os.Stderr, "       pvcmount completion zsh\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
