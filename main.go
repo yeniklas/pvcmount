@@ -174,5 +174,12 @@ func run(ctx context.Context, pvcName, namespace, mountpoint string, autoCreated
 	fmt.Printf("\nMounted PVC %q at %s\nPress Ctrl-C to unmount.\n", pvcName, mountpoint)
 
 	WaitUntilUnmounted(ctx, mountpoint)
+	if ctx.Err() == nil {
+		// Unmounted without Ctrl-C — sshfs/sshd dropped the connection.
+		if logs, _ := client.podLogs(podName); logs != "" {
+			fmt.Printf("sshd logs:\n%s\n", logs)
+		}
+		return fmt.Errorf("sshfs connection dropped unexpectedly")
+	}
 	return nil
 }

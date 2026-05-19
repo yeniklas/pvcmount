@@ -160,9 +160,6 @@ func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdI
 				Ports: []corev1.ContainerPort{{ContainerPort: 22}},
 				SecurityContext: &corev1.SecurityContext{
 					AllowPrivilegeEscalation: boolPtr(false),
-					Capabilities: &corev1.Capabilities{
-						Drop: []corev1.Capability{"ALL"},
-					},
 				},
 				VolumeMounts: []corev1.VolumeMount{
 					{Name: "data", MountPath: "/data"},
