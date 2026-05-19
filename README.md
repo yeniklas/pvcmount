@@ -91,6 +91,26 @@ pvcmount completion zsh > "${fpath[1]}/_pvcmount"
 
 Completion covers flags, live PVC names, and live namespace names from the cluster.
 
+## Preflight checks
+
+Before creating any resources, pvcmount verifies that it has the permissions it needs and that the pod spec would be accepted by the cluster:
+
+1. **Permission checks** — `SelfSubjectAccessReview` (the same mechanism as `kubectl auth can-i`) for all required verbs. All checks run in parallel so there is no added delay on the happy path.
+2. **Admission dry-run** — the pod spec is submitted with `dryRun=All`, running it through PodSecurity, admission webhooks, and ResourceQuota without persisting anything.
+
+If anything fails, pvcmount exits before touching the cluster and tells you exactly what is blocked:
+
+```
+error: missing permissions in namespace "staging":
+  - cannot create pods: not allowed
+  - cannot create pods/portforward: not allowed
+```
+
+```
+error: pod spec rejected by cluster:
+  pods "pvcmount-preflight-x7k2q" is forbidden: violates PodSecurity "restricted:latest": ...
+```
+
 ## Security
 
 - pvcmount refuses to run as root. FUSE filesystems mounted by root are only accessible to root, and elevated privileges are not needed. Use `--allow-root` to override if you have a specific reason.
