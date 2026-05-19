@@ -5,15 +5,20 @@ import (
 	"crypto/rand"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+
+	klog "k8s.io/klog/v2"
 )
 
 var version = "dev"
 
 func main() {
+	klog.SetOutput(io.Discard)
+
 	// Handle subcommands before flag parsing so `flag` doesn't choke on unknown args.
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
@@ -122,12 +127,11 @@ func run(ctx context.Context, pvcName, namespace, mountpoint string, autoCreated
 		return fmt.Errorf("kubernetes client: %w", err)
 	}
 
+	fmt.Printf("\n%s  %s\n\n", styleBold("Mounting "+pvcName), styleDim("·  "+client.namespace))
+
 	pvcInfo, err := client.InspectPVC(ctx, pvcName)
 	if err != nil {
 		return err
-	}
-	if pvcInfo.NodeName != "" {
-		fmt.Printf("PVC is ReadWriteOnce, pinning pod to node %s\n", pvcInfo.NodeName)
 	}
 
 	kp, err := GenerateKeyPair()
@@ -147,6 +151,7 @@ func run(ctx context.Context, pvcName, namespace, mountpoint string, autoCreated
 	if err := client.WaitPodReady(ctx, podName); err != nil {
 		return fmt.Errorf("pod not ready: %w", err)
 	}
+	stepDone("Pod ready")
 
 	localPort, stopForward, err := client.StartPortForward(ctx, podName)
 	if err != nil {
@@ -171,7 +176,7 @@ func run(ctx context.Context, pvcName, namespace, mountpoint string, autoCreated
 		}
 	}()
 
-	fmt.Printf("\nMounted PVC %q at %s\nPress Ctrl-C to unmount.\n", pvcName, mountpoint)
+	fmt.Printf("\nMounted at %s\n%s\n", styleBold(mountpoint), styleDim("Press Ctrl+C to unmount."))
 
 	WaitUntilUnmounted(ctx, mountpoint)
 	if ctx.Err() == nil {

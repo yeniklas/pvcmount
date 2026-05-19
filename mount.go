@@ -18,6 +18,7 @@ func SSHFS(mountpoint string, localPort uint16, keyFile string) (*exec.Cmd, erro
 		"-o", "IdentityFile=" + keyFile,
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "LogLevel=ERROR",
 		"-o", "auto_unmount",
 		"-f",
 	}

@@ -44,6 +44,8 @@ func NewClient(namespace string) (*Client, error) {
 		}
 	}
 
+	restCfg.WarningHandler = rest.NoWarnings{}
+
 	cs, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		return nil, err
@@ -116,7 +118,6 @@ func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdI
 
 	existing, err := c.cs.CoreV1().Pods(c.namespace).Get(ctx, podName, metav1.GetOptions{})
 	if err == nil {
-		fmt.Printf("deleting existing pod %s\n", podName)
 		if err := c.DeletePod(ctx, podName); err != nil {
 			return "", fmt.Errorf("delete stale pod: %w", err)
 		}
@@ -183,13 +184,10 @@ func (c *Client) EnsurePod(ctx context.Context, info *PVCInfo, pubKeyLine, sshdI
 		return "", fmt.Errorf("create pod: %w", err)
 	}
 
-	fmt.Printf("created pod %s\n", podName)
 	return podName, nil
 }
 
 func (c *Client) WaitPodReady(ctx context.Context, podName string) error {
-	fmt.Printf("waiting for pod %s to be ready...\n", podName)
-
 	watcher, err := c.cs.CoreV1().Pods(c.namespace).Watch(ctx, metav1.ListOptions{
 		FieldSelector: "metadata.name=" + podName,
 	})
@@ -263,12 +261,10 @@ func (c *Client) StartPortForward(ctx context.Context, podName string) (uint16, 
 	}
 
 	localPort := ports[0].Local
-	fmt.Printf("port-forwarding localhost:%d → pod/%s:22\n", localPort, podName)
 
 	// Wait until sshd is actually accepting connections.
 	// A plain TCP dial succeeds immediately because the port-forward proxy accepts the
 	// connection before forwarding it. We must read the SSH banner to confirm sshd is up.
-	fmt.Print("waiting for sshd to accept connections")
 	deadline := time.Now().Add(60 * time.Second)
 	addr := fmt.Sprintf("127.0.0.1:%d", localPort)
 	ready := false
@@ -278,15 +274,13 @@ func (c *Client) StartPortForward(ctx context.Context, podName string) (uint16, 
 			return 0, nil, ctx.Err()
 		}
 		if sshdReady(addr) {
-			fmt.Println(" ready")
+			stepDone("sshd ready")
 			ready = true
 			break
 		}
-		fmt.Print(".")
 		time.Sleep(2 * time.Second)
 	}
 	if !ready {
-		fmt.Println()
 		logs, _ := c.podLogs(podName)
 		if logs != "" {
 			fmt.Printf("pod logs:\n%s\n", logs)
